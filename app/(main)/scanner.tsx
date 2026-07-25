@@ -1,9 +1,10 @@
+import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import React, { useState } from 'react';
 import {
     Alert,
     Modal,
-    SafeAreaView,
+    ScrollView,
     StyleSheet,
     Text,
     TextInput,
@@ -11,182 +12,250 @@ import {
     View,
 } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function ScannerScreen() {
-    const [permission, requestPermission] = useCameraPermissions();
-    const [scanMode, setScanMode] = useState<'product' | 'location'>('product');
-    const [scanned, setScanned] = useState(false);
+    const [activeTab, setActiveTab] = useState<'producto' | 'ubicacion'>('producto');
 
-    // Estados del Formulario
-    const [productCode, setProductCode] = useState<string | null>(null);
+    // Campos del formulario
+    const [code, setCode] = useState('');
     const [description, setDescription] = useState('');
     const [quantity, setQuantity] = useState('1');
-    const [locationCode, setLocationCode] = useState<string | null>(null);
+    const [location, setLocation] = useState('');
 
-    // Estados para el QR de Vinculación
-    const [showQRModal, setShowQRModal] = useState(false);
-    const [linkedPayload, setLinkedPayload] = useState<string>('');
+    // Cámara y escáner
+    const [isScanning, setIsScanning] = useState(false);
+    const [scanned, setScanned] = useState(false);
+    const [permission, requestPermission] = useCameraPermissions();
 
-    // 1. Permisos de Cámara
-    if (!permission) return <View style={styles.container} />;
-    if (!permission.granted) {
-        return (
-            <View style={styles.permissionContainer}>
-                <Text style={styles.permissionText}>
-                    Necesitamos acceso a la cámara para escanear inventario
-                </Text>
-                <TouchableOpacity style={styles.permissionButton} onPress={requestPermission}>
-                    <Text style={styles.permissionButtonText}>Conceder Permiso</Text>
-                </TouchableOpacity>
-            </View>
-        );
-    }
+    // Modal QR
+    const [showQrModal, setShowQrModal] = useState(false);
 
-    // Helper para formatear texto de Ubicación
-    const formatLocationText = (raw: string | any): string => {
-        if (typeof raw === 'object' && raw !== null) {
-            const { pasillo, anaquel, nivel } = raw;
-            if (pasillo && anaquel && nivel) {
-                return `PASILLO ${pasillo} - ANAQUEL ${anaquel} - NIVEL ${nivel}`;
+    // Abrir escáner
+    const handleOpenScanner = async () => {
+        if (!permission?.granted) {
+            const { granted } = await requestPermission();
+            if (!granted) {
+                Alert.alert('Permiso denegado', 'Se requiere acceso a la cámara para escanear.');
+                return;
             }
         }
-        return String(raw).toUpperCase();
+        setScanned(false);
+        setIsScanning(true);
     };
 
-    // 2. Procesador del código escaneado (JSON o String)
+    // LÓGICA DE ESCANEO SEGÚN PESTAÑA ACTIVA
     const handleBarcodeScanned = ({ data }: { data: string }) => {
-        if (scanned) return;
         setScanned(true);
+        setIsScanning(false);
 
         try {
-            const parsedData = JSON.parse(data);
+            const parsed = JSON.parse(data);
 
-            if (scanMode === 'product') {
-                // 1. Extraer Código / ID
-                const code = parsedData.id || parsedData.sku || parsedData.codigo || parsedData.code || data;
-                setProductCode(String(code));
+            if (typeof parsed === 'object' && parsed !== null) {
+                const normalizedKeys: Record<string, any> = {};
+                Object.keys(parsed).forEach((key) => {
+                    normalizedKeys[key.toLowerCase()] = parsed[key];
+                });
 
-                // 2. Extraer Descripción (evalúa múltiples claves posibles)
-                const desc =
-                    parsedData.descripcion ||
-                    parsedData.description ||
-                    parsedData.desc ||
-                    parsedData.nombre ||
-                    parsedData.name ||
-                    parsedData.title ||
-                    '';
-                setDescription(String(desc));
+                // MODO UBICACIÓN: Solo extrae datos de ubicación
+                if (activeTab === 'ubicacion') {
+                    const pasillo = normalizedKeys.pasillo ? `PASILLO ${normalizedKeys.pasillo}` : '';
+                    const anaquel = normalizedKeys.anaquel ? `ANAQUEL ${normalizedKeys.anaquel}` : '';
+                    const nivel = normalizedKeys.nivel ? `NIVEL ${normalizedKeys.nivel}` : '';
 
-                // 3. Extraer Cantidad
-                const cant = parsedData.cantidad || parsedData.quantity || parsedData.cant || parsedData.qty;
-                if (cant !== undefined) {
-                    setQuantity(String(cant));
+                    const fullLocation =
+                        normalizedKeys.ubicacion ||
+                        normalizedKeys.location ||
+                        [pasillo, anaquel, nivel].filter(Boolean).join(' - ');
+
+                    setLocation(fullLocation || data);
                 }
+                // MODO PRODUCTO: Solo extrae datos del producto
+                else {
+                    // 1. EXTRAER ID / CÓDIGO (Prioridad en ID)
+                    const extractedCode =
+                        normalizedKeys.id ||
+                        normalizedKeys.codigo ||
+                        normalizedKeys.code ||
+                        normalizedKeys.cod ||
+                        normalizedKeys.sku;
 
-                Alert.alert(
-                    'Producto Detectado',
-                    `Código: ${code}\nDescripción: ${desc || 'N/A'}\n\n¿Deseas pasar a escanear la ubicación?`,
-                    [
-                        { text: 'Escanear Ubicación', onPress: () => setScanMode('location') },
-                        { text: 'Seguir aquí', style: 'cancel' },
-                    ]
-                );
-            } else {
-                const formattedLoc = formatLocationText(parsedData);
-                setLocationCode(formattedLoc);
-            }
-        } catch {
-            // Si NO es JSON, intentar parsear si viene separado por guion, coma o barra (ej: "PROD-1001 - Caja de Tornillos")
-            if (scanMode === 'product') {
-                const parts = data.split(/[-;,|]/).map((p) => p.trim());
-                if (parts.length >= 2) {
-                    setProductCode(parts[0]);
-                    setDescription(parts[1]);
-                    if (parts[2] && !isNaN(Number(parts[2]))) {
-                        setQuantity(parts[2]);
+                    if (extractedCode) {
+                        setCode(String(extractedCode));
                     }
-                } else {
-                    setProductCode(data);
+
+                    // 2. EXTRAER DESCRIPCIÓN
+                    const extractedDesc =
+                        normalizedKeys.descripcion ||
+                        normalizedKeys.description ||
+                        normalizedKeys.nombre ||
+                        normalizedKeys.name ||
+                        normalizedKeys.desc ||
+                        normalizedKeys.producto;
+
+                    if (extractedDesc) {
+                        setDescription(String(extractedDesc));
+                    }
+
+                    // 3. EXTRAER CANTIDAD
+                    const extractedQty =
+                        normalizedKeys.cantidad ||
+                        normalizedKeys.quantity ||
+                        normalizedKeys.cant ||
+                        normalizedKeys.stock;
+
+                    if (extractedQty) {
+                        setQuantity(String(extractedQty));
+                    }
                 }
+            }
+        } catch (e) {
+            if (activeTab === 'ubicacion') {
+                setLocation(data);
             } else {
-                setLocationCode(formatLocationText(data));
+                setCode(data);
             }
         }
     };
-    // 3. Acción al Vincular Producto
-    const handleLinkProduct = () => {
-        if (!productCode || !locationCode) {
-            Alert.alert(
-                'Faltan Datos',
-                'Debes escanear tanto un producto como una ubicación antes de vincular.'
-            );
+
+    // Vincular (Solo procesa el guardado, sin abrir el modal del QR)
+    const handleLink = () => {
+        if (activeTab === 'producto' && !code.trim()) {
+            Alert.alert('Atención', 'Ingresa o escanea un código de producto.');
             return;
         }
 
-        // Armamos la estructura de datos vinculada
-        const linkData = {
-            type: 'LINKED_INVENTORY',
-            producto_id: productCode,
-            descripcion: description,
-            cantidad: parseInt(quantity, 10) || 1,
-            ubicacion: locationCode,
-            fecha_vinculacion: new Date().toISOString(),
-        };
+        if (activeTab === 'ubicacion' && !location.trim()) {
+            Alert.alert('Atención', 'Ingresa o escanea una ubicación.');
+            return;
+        }
 
-        // Convertimos a JSON para generar el QR
-        setLinkedPayload(JSON.stringify(linkData));
-        setShowQRModal(true);
+        Alert.alert(
+            'Éxito',
+            `${activeTab === 'producto' ? 'Producto' : 'Ubicación'} vinculado correctamente.`
+        );
     };
 
-    // Limpiar formulario y reiniciar flujo
-    const handleFinishProcess = () => {
-        setShowQRModal(false);
-        setProductCode(null);
-        setDescription('');
-        setLocationCode(null);
-        setQuantity('1');
-        setScanMode('product');
-        setScanned(false);
+    // Abrir Modal de QR verificando datos previos
+    const handleOpenQrModal = () => {
+        if (activeTab === 'producto' && !code.trim()) {
+            Alert.alert('Atención', 'Ingresa o escanea un código de producto para generar el QR.');
+            return;
+        }
+        if (activeTab === 'ubicacion' && !location.trim()) {
+            Alert.alert('Atención', 'Ingresa o escanea una ubicación para generar el QR.');
+            return;
+        }
+        setShowQrModal(true);
+    };
+
+    // Construir string que se codifica DENTRO del QR
+    const getQrValue = () => {
+        if (activeTab === 'ubicacion') {
+            return JSON.stringify({ ubicacion: location });
+        }
+        return JSON.stringify({
+            id: code,
+            descripcion: description,
+            cantidad: quantity,
+        });
     };
 
     return (
-        <SafeAreaView style={styles.container}>
-            {/* Header Verde Superior */}
-            <View style={styles.header}>
-                <Text style={styles.headerCompany}>RZ IMPORT C.A</Text>
-                <Text style={styles.headerUser}>usuario</Text>
-            </View>
-
-            <View style={styles.content}>
-                {/* Selector de Modo (Producto vs Ubicación) */}
-                <View style={styles.modeToggleContainer}>
+        <SafeAreaView style={styles.container} edges={['bottom', 'left', 'right']}>
+            <ScrollView contentContainerStyle={styles.scrollContent}>
+                {/* Selector Producto / Ubicación */}
+                <View style={styles.toggleContainer}>
                     <TouchableOpacity
-                        style={[styles.modeButton, scanMode === 'product' && styles.modeButtonActive]}
-                        onPress={() => {
-                            setScanMode('product');
-                            setScanned(false);
-                        }}
+                        style={[styles.toggleBtn, activeTab === 'producto' && styles.toggleBtnActive]}
+                        onPress={() => setActiveTab('producto')}
                     >
-                        <Text style={[styles.modeText, scanMode === 'product' && styles.modeTextActive]}>
+                        <Text style={[styles.toggleText, activeTab === 'producto' && styles.toggleTextActive]}>
                             Producto
                         </Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                        style={[styles.modeButton, scanMode === 'location' && styles.modeButtonActive]}
-                        onPress={() => {
-                            setScanMode('location');
-                            setScanned(false);
-                        }}
+                        style={[styles.toggleBtn, activeTab === 'ubicacion' && styles.toggleBtnActive]}
+                        onPress={() => setActiveTab('ubicacion')}
                     >
-                        <Text style={[styles.modeText, scanMode === 'location' && styles.modeTextActive]}>
+                        <Text style={[styles.toggleText, activeTab === 'ubicacion' && styles.toggleTextActive]}>
                             Ubicación
                         </Text>
                     </TouchableOpacity>
                 </View>
 
-                {/* Visor de Cámara para Escáner */}
-                <View style={styles.cameraWrapper}>
+                {/* Visor / Botón de la cámara */}
+                <TouchableOpacity style={styles.cameraBox} onPress={handleOpenScanner} activeOpacity={0.85}>
+                    <Ionicons name="camera-outline" size={48} color="#00C853" />
+                    <Text style={styles.cameraBoxText}>Toca para abrir la cámara y escanear</Text>
+                </TouchableOpacity>
+
+                {/* Formulario */}
+                <View style={styles.formGroup}>
+                    <Text style={styles.label}>código:</Text>
+                    <TextInput
+                        style={styles.input}
+                        placeholder="Escanea o escribe código"
+                        placeholderTextColor="#888888"
+                        value={code}
+                        onChangeText={setCode}
+                    />
+                </View>
+
+                <View style={styles.formGroup}>
+                    <Text style={styles.label}>descripción:</Text>
+                    <TextInput
+                        style={styles.input}
+                        placeholder="Descripción del ítem"
+                        placeholderTextColor="#888888"
+                        value={description}
+                        onChangeText={setDescription}
+                    />
+                </View>
+
+                {activeTab === 'producto' && (
+                    <View style={styles.formGroup}>
+                        <Text style={styles.label}>cantidad:</Text>
+                        <TextInput
+                            style={[styles.input, styles.shortInput]}
+                            keyboardType="numeric"
+                            value={quantity}
+                            onChangeText={setQuantity}
+                        />
+                    </View>
+                )}
+
+                <View style={styles.formGroup}>
+                    <Text style={styles.label}>ubicación:</Text>
+                    <TextInput
+                        style={styles.input}
+                        placeholder="PASILLO X - ANAQUEL Y - NIVEL Z"
+                        placeholderTextColor="#888888"
+                        value={location}
+                        onChangeText={setLocation}
+                    />
+                </View>
+
+                {/* Botones de Acción */}
+                <View style={styles.buttonGroup}>
+                    <TouchableOpacity style={styles.btnPrimary} onPress={handleLink} activeOpacity={0.8}>
+                        <Text style={styles.btnPrimaryText}>
+                            Vincular {activeTab === 'producto' ? 'Producto' : 'Ubicación'}
+                        </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity style={styles.btnSecondary} onPress={handleOpenQrModal} activeOpacity={0.8}>
+                        <Ionicons name="qr-code-outline" size={20} color="#000000" style={{ marginRight: 8 }} />
+                        <Text style={styles.btnSecondaryText}>Generar Código QR</Text>
+                    </TouchableOpacity>
+                </View>
+            </ScrollView>
+
+            {/* ================= MODAL CÁMARA ================= */}
+            <Modal visible={isScanning} animationType="slide" transparent={false}>
+                <SafeAreaView style={styles.fullModal}>
                     <CameraView
                         style={StyleSheet.absoluteFillObject}
                         facing="back"
@@ -194,92 +263,50 @@ export default function ScannerScreen() {
                         barcodeScannerSettings={{
                             barcodeTypes: ['qr', 'code128', 'ean13'],
                         }}
-                    />
-                    {scanned && (
-                        <TouchableOpacity style={styles.rescanOverlay} onPress={() => setScanned(false)}>
-                            <Text style={styles.rescanText}>Toca para volver a escanear</Text>
-                        </TouchableOpacity>
-                    )}
-                </View>
+                    >
+                        <View style={styles.cameraOverlay}>
+                            <View style={styles.targetBox} />
+                            <TouchableOpacity style={styles.closeBtn} onPress={() => setIsScanning(false)}>
+                                <Ionicons name="close" size={30} color="#FFFFFF" />
+                            </TouchableOpacity>
+                        </View>
+                    </CameraView>
+                </SafeAreaView>
+            </Modal>
 
-                {/* Formulario de Confirmación */}
-                <View style={styles.formContainer}>
-                    {/* Código de Producto */}
-                    <View style={styles.fieldRow}>
-                        <Text style={styles.fieldLabel}>código:</Text>
-                        <TextInput
-                            style={styles.fieldInput}
-                            value={productCode || ''}
-                            onChangeText={setProductCode}
-                            placeholder="Escanea o escribe código"
-                        />
-                    </View>
-
-                    {/* Descripción */}
-                    <View style={styles.fieldRow}>
-                        <Text style={styles.fieldLabel}>descripción:</Text>
-                        <TextInput
-                            style={styles.fieldInput}
-                            value={description}
-                            onChangeText={setDescription}
-                            placeholder="Descripción del ítem"
-                        />
-                    </View>
-
-                    {/* Cantidad */}
-                    <View style={styles.fieldRow}>
-                        <Text style={styles.fieldLabel}>cantidad:</Text>
-                        <TextInput
-                            style={[styles.fieldInput, styles.shortInput]}
-                            value={quantity}
-                            onChangeText={setQuantity}
-                            keyboardType="numeric"
-                        />
-                    </View>
-
-                    {/* Ubicación */}
-                    <View style={styles.fieldRow}>
-                        <Text style={styles.fieldLabel}>ubicación:</Text>
-                        <TextInput
-                            style={styles.fieldInput}
-                            value={locationCode || ''}
-                            onChangeText={setLocationCode}
-                            placeholder="PASILLO X - ANAQUEL Y - NIVEL Z"
-                        />
-                    </View>
-                </View>
-
-                {/* Botón Vincular */}
-                <TouchableOpacity style={styles.linkButton} onPress={handleLinkProduct}>
-                    <Text style={styles.linkButtonText}>Vincular Producto</Text>
-                </TouchableOpacity>
-            </View>
-
-            {/* MODAL CON QR DE VINCULACIÓN GENERADO */}
-            <Modal visible={showQRModal} animationType="slide" transparent={true}>
+            {/* ================= MODAL GENERADOR DE QR ================= */}
+            <Modal visible={showQrModal} animationType="fade" transparent={true}>
                 <View style={styles.modalOverlay}>
-                    <View style={styles.modalContent}>
-                        <Text style={styles.modalTitle}>¡Vinculación Exitosa!</Text>
-                        <Text style={styles.modalSubtitle}>
-                            QR generado para la etiqueta de inventario
+                    <View style={styles.qrModalCard}>
+                        <Text style={styles.qrModalTitle}>
+                            Etiqueta QR - {activeTab === 'producto' ? 'Producto' : 'Ubicación'}
                         </Text>
 
-                        {/* Renderizado de Código QR */}
-                        {linkedPayload !== '' && (
-                            <View style={styles.qrContainer}>
-                                <QRCode value={linkedPayload} size={180} />
-                            </View>
-                        )}
-
-                        <View style={styles.summaryBox}>
-                            <Text style={styles.summaryTextBold}>{productCode}</Text>
-                            <Text style={styles.summaryText}>{description}</Text>
-                            <Text style={styles.summaryText}>Cantidad: {quantity}</Text>
-                            <Text style={styles.summaryTextLocation}>{locationCode}</Text>
+                        <View style={styles.qrContainer}>
+                            <QRCode
+                                value={getQrValue()}
+                                size={180}
+                                color="#000000"
+                                backgroundColor="#FFFFFF"
+                            />
                         </View>
 
-                        <TouchableOpacity style={styles.closeModalButton} onPress={handleFinishProcess}>
-                            <Text style={styles.closeModalButtonText}>Finalizar y Limpiar</Text>
+                        {/* Vista condicional según pestaña activa */}
+                        {activeTab === 'producto' ? (
+                            <>
+                                <Text style={styles.qrCodeText}>ID: {code.toUpperCase()}</Text>
+                                {description !== '' && <Text style={styles.qrDescText}>{description}</Text>}
+                                <Text style={styles.qrQtyText}>Cantidad: {quantity}</Text>
+                            </>
+                        ) : (
+                            <>
+                                <Text style={styles.qrCodeText}>UBICACIÓN</Text>
+                                <Text style={styles.qrDescText}>{location.toUpperCase()}</Text>
+                            </>
+                        )}
+
+                        <TouchableOpacity style={styles.btnCloseQr} onPress={() => setShowQrModal(false)}>
+                            <Text style={styles.btnCloseQrText}>Cerrar</Text>
                         </TouchableOpacity>
                     </View>
                 </View>
@@ -293,124 +320,137 @@ const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: '#FAFAFA',
     },
-    header: {
-        backgroundColor: '#00C853',
-        paddingTop: 45,
-        paddingBottom: 15,
-        paddingHorizontal: 20,
+    scrollContent: {
+        padding: 20,
+        paddingBottom: 40,
+    },
+    toggleContainer: {
         flexDirection: 'row',
-        justifyContent: 'space-between',
+        backgroundColor: '#E0E0E0',
+        borderRadius: 10,
+        padding: 4,
+        marginBottom: 16,
+    },
+    toggleBtn: {
+        flex: 1,
+        paddingVertical: 10,
         alignItems: 'center',
+        borderRadius: 8,
     },
-    headerCompany: {
-        color: '#000',
-        fontSize: 18,
+    toggleBtnActive: {
+        backgroundColor: '#00C853',
+    },
+    toggleText: {
+        fontSize: 15,
         fontWeight: 'bold',
+        color: '#555555',
     },
-    headerUser: {
-        color: '#1B5E20',
-        fontSize: 16,
+    toggleTextActive: {
+        color: '#FFFFFF',
+    },
+    cameraBox: {
+        height: 160,
+        backgroundColor: '#000000',
+        borderRadius: 12,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 20,
+        borderWidth: 1.5,
+        borderColor: '#000000',
+    },
+    cameraBoxText: {
+        color: '#FFFFFF',
+        marginTop: 8,
+        fontSize: 13,
         fontWeight: '500',
     },
-    content: {
+    formGroup: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 14,
+    },
+    label: {
+        fontSize: 15,
+        fontWeight: 'bold',
+        color: '#000000',
+        width: '30%',
+    },
+    input: {
         flex: 1,
-        paddingHorizontal: 20,
-        paddingTop: 15,
+        borderWidth: 1.5,
+        borderColor: '#000000',
+        borderRadius: 10,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        fontSize: 14,
+        backgroundColor: '#FFFFFF',
+        color: '#000000',
+    },
+    shortInput: {
+        flex: 0.3,
+    },
+    buttonGroup: {
+        marginTop: 15,
         alignItems: 'center',
     },
-
-    /* CONTROLES MODO DE ESCÁNER */
-    modeToggleContainer: {
-        flexDirection: 'row',
-        marginBottom: 10,
-        borderRadius: 8,
-        backgroundColor: '#E0E0E0',
-        padding: 3,
-    },
-    modeButton: {
-        paddingVertical: 6,
-        paddingHorizontal: 20,
-        borderRadius: 6,
-    },
-    modeButtonActive: {
+    btnPrimary: {
         backgroundColor: '#00C853',
-    },
-    modeText: {
-        fontWeight: '600',
-        color: '#616161',
-    },
-    modeTextActive: {
-        color: '#FFF',
-    },
-
-    /* VISOR DE CÁMARA */
-    cameraWrapper: {
         width: '100%',
-        height: 180,
-        borderRadius: 12,
-        overflow: 'hidden',
-        backgroundColor: '#000',
-        marginBottom: 15,
+        height: 48,
+        borderRadius: 24,
+        borderWidth: 1.5,
+        borderColor: '#000000',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 10,
     },
-    rescanOverlay: {
-        ...StyleSheet.absoluteFillObject,
-        backgroundColor: 'rgba(0,0,0,0.6)',
+    btnPrimaryText: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        color: '#000000',
+    },
+    btnSecondary: {
+        backgroundColor: '#FFFFFF',
+        width: '100%',
+        height: 46,
+        borderRadius: 23,
+        borderWidth: 1.5,
+        borderColor: '#000000',
+        flexDirection: 'row',
         justifyContent: 'center',
         alignItems: 'center',
     },
-    rescanText: {
-        color: '#FFF',
+    btnSecondaryText: {
+        fontSize: 15,
         fontWeight: 'bold',
-        fontSize: 14,
+        color: '#000000',
     },
 
-    /* FORMULARIO DE DATOS */
-    formContainer: {
-        width: '100%',
-        marginBottom: 15,
-    },
-    fieldRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 10,
-    },
-    fieldLabel: {
-        width: 100,
-        fontWeight: 'bold',
-        fontSize: 14,
-        color: '#000',
-    },
-    fieldInput: {
+    /* Modales */
+    fullModal: {
         flex: 1,
-        borderWidth: 1,
-        borderColor: '#000',
-        borderRadius: 8,
-        paddingHorizontal: 12,
-        paddingVertical: 6,
-        backgroundColor: '#FFF',
-        fontSize: 13,
+        backgroundColor: '#000000',
     },
-    shortInput: {
-        flex: 0.4,
+    cameraOverlay: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
     },
-
-    /* BOTÓN PRINCIPAL */
-    linkButton: {
-        backgroundColor: '#00C853',
-        borderWidth: 1.5,
-        borderColor: '#000',
-        paddingVertical: 12,
-        paddingHorizontal: 30,
+    targetBox: {
+        width: 240,
+        height: 240,
+        borderWidth: 2,
+        borderColor: '#00C853',
+        borderRadius: 12,
+    },
+    closeBtn: {
+        position: 'absolute',
+        top: 30,
+        right: 20,
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        padding: 10,
         borderRadius: 25,
-        marginTop: 5,
     },
-    linkButtonText: {
-        fontWeight: 'bold',
-        fontSize: 16,
-        color: '#000',
-    },
-
-    /* MODAL Y ETIQUETA QR */
     modalOverlay: {
         flex: 1,
         backgroundColor: 'rgba(0,0,0,0.6)',
@@ -418,86 +458,57 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         padding: 20,
     },
-    modalContent: {
-        backgroundColor: '#FFF',
-        borderRadius: 16,
-        padding: 24,
-        alignItems: 'center',
+    qrModalCard: {
+        backgroundColor: '#FFFFFF',
         width: '90%',
+        borderRadius: 16,
+        padding: 20,
+        alignItems: 'center',
         elevation: 5,
     },
-    modalTitle: {
-        fontSize: 18,
+    qrModalTitle: {
+        fontSize: 16,
         fontWeight: 'bold',
-        color: '#000',
-    },
-    modalSubtitle: {
-        fontSize: 12,
-        color: '#616161',
-        marginVertical: 4,
-        textAlign: 'center',
+        color: '#000000',
+        marginBottom: 15,
     },
     qrContainer: {
-        marginVertical: 15,
         padding: 12,
-        backgroundColor: '#FFF',
+        backgroundColor: '#FFFFFF',
+        borderRadius: 8,
         borderWidth: 1,
         borderColor: '#E0E0E0',
-        borderRadius: 8,
     },
-    summaryBox: {
-        alignItems: 'center',
-        marginBottom: 15,
-    },
-    summaryTextBold: {
+    qrCodeText: {
+        fontSize: 16,
         fontWeight: 'bold',
-        fontSize: 15,
-        color: '#000',
+        color: '#000000',
+        marginTop: 12,
     },
-    summaryText: {
-        fontSize: 13,
-        color: '#424242',
+    qrDescText: {
+        fontSize: 14,
+        color: '#555555',
+        marginTop: 4,
+        textAlign: 'center',
     },
-    summaryTextLocation: {
-        fontSize: 12,
-        fontWeight: 'bold',
-        color: '#1B5E20',
+    qrQtyText: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#00C853',
         marginTop: 4,
     },
-    closeModalButton: {
+    btnCloseQr: {
+        marginTop: 20,
         backgroundColor: '#00C853',
+        paddingHorizontal: 30,
         paddingVertical: 10,
-        paddingHorizontal: 20,
         borderRadius: 20,
-        width: '100%',
-        alignItems: 'center',
+        borderWidth: 1.5,
+        borderColor: '#000000',
     },
-    closeModalButtonText: {
-        color: '#000',
+    btnCloseQrText: {
+        fontSize: 15,
         fontWeight: 'bold',
-        fontSize: 14,
-    },
-
-    /* PERMISOS */
-    permissionContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        padding: 20,
-    },
-    permissionText: {
-        textAlign: 'center',
-        marginBottom: 15,
-        fontSize: 16,
-    },
-    permissionButton: {
-        backgroundColor: '#00C853',
-        paddingVertical: 10,
-        paddingHorizontal: 20,
-        borderRadius: 8,
-    },
-    permissionButtonText: {
-        color: '#FFF',
-        fontWeight: 'bold',
+        color: '#000000',
     },
 });

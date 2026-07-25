@@ -1,84 +1,433 @@
 import { Ionicons } from '@expo/vector-icons';
+import { CameraView, useCameraPermissions } from 'expo-camera';
+import * as ImagePicker from 'expo-image-picker';
 import React, { useState } from 'react';
-import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import {
+    Alert,
+    Image,
+    Modal,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function OrdersScreen() {
-    const [showErrorView, setShowErrorView] = useState(false);
-    const [errorText, setErrorText] = useState('');
+    // Datos mock de la orden
+    const [currentOrder] = useState({
+        id: '#PF-99482',
+        code: 'FIL-AWA-001',
+        description: 'Filtro de aciete AWA',
+        quantity: 1,
+        location: 'PASILLO A - ANAQUEL 3 - NIVEL 2',
+    });
+
+    // Estado del escáner para completar orden
+    const [isScanning, setIsScanning] = useState(false);
+    const [scanned, setScanned] = useState(false);
+    const [permission, requestPermission] = useCameraPermissions();
+
+    // Estados del reporte de incidencias
+    const [showErrorReport, setShowErrorReport] = useState(false);
+    const [errorDescription, setErrorDescription] = useState('');
+    const [evidenceImage, setEvidenceImage] = useState<string | null>(null);
+
+    // Abrir la cámara para validar QR
+    const handleOpenScanner = async () => {
+        if (!permission?.granted) {
+            const { granted } = await requestPermission();
+            if (!granted) {
+                Alert.alert('Permiso denegado', 'Se necesita acceso a la cámara para escanear el QR.');
+                return;
+            }
+        }
+        setScanned(false);
+        setIsScanning(true);
+    };
+
+    // Lógica al detectar un código QR
+    const handleBarcodeScanned = ({ data }: { data: string }) => {
+        setScanned(true);
+        setIsScanning(false);
+
+        if (data === currentOrder.code) {
+            Alert.alert(
+                '¡Orden Completada!',
+                `El código ${data} coincide exitosamente con la orden ${currentOrder.id}.`
+            );
+        } else {
+            Alert.alert(
+                'Código Incorrecto',
+                `El código escaneado (${data}) no coincide con el producto esperado (${currentOrder.code}).`
+            );
+        }
+    };
+
+    // Adjuntar evidencia fotográfica
+    const pickImage = async () => {
+        const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+        if (!permissionResult.granted) {
+            Alert.alert('Permiso requerido', 'Se necesita acceso a la galería.');
+            return;
+        }
+
+        const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ['images'],
+            allowsEditing: true,
+            quality: 0.7,
+        });
+
+        if (!result.canceled) {
+            setEvidenceImage(result.assets[0].uri);
+        }
+    };
+
+    // Enviar reporte de error
+    const handleSaveReport = () => {
+        if (!errorDescription.trim()) {
+            Alert.alert('Atención', 'Por favor, escriba una descripción del error.');
+            return;
+        }
+
+        Alert.alert('Incidencia Registrada', 'El reporte fue enviado correctamente.', [
+            {
+                text: 'OK',
+                onPress: () => {
+                    setShowErrorReport(false);
+                    setErrorDescription('');
+                    setEvidenceImage(null);
+                },
+            },
+        ]);
+    };
 
     return (
-        <View style={styles.container}>
-            <View style={styles.header}>
-                <Text style={styles.headerTitle}>RZ IMPORT C.A</Text>
-                <Text style={styles.headerUser}>usuario</Text>
-            </View>
+        <SafeAreaView style={styles.container} edges={['bottom', 'left', 'right']}>
+            <ScrollView contentContainerStyle={styles.scrollContent}>
+                {!showErrorReport ? (
+                    /* ================= VISTA DE LA ORDEN ================= */
+                    <View style={styles.card}>
+                        <View style={styles.row}>
+                            <Text style={styles.label}>Orden N°</Text>
+                            <Text style={styles.valueBold}>{currentOrder.id}</Text>
+                        </View>
 
-            {!showErrorView ? (
-                <View style={styles.content}>
-                    <View style={styles.orderCard}>
-                        <View style={styles.row}><Text style={styles.label}>Orden N°</Text><Text style={styles.val}>#PF-99482</Text></View>
-                        <View style={styles.row}><Text style={styles.label}>Codigo</Text><Text style={styles.val}>FIL-AWA-001</Text></View>
-                        <View style={styles.row}><Text style={styles.label}>Descripción</Text><Text style={styles.val}>Filtro de aciete AWA</Text></View>
-                        <View style={styles.row}><Text style={styles.label}>Cantidad</Text><Text style={styles.val}>1</Text></View>
-                        <View style={styles.row}><Text style={styles.label}>Ubicación</Text><Text style={styles.val}>PASILLO A - ANAQUEL 3 - NIVEL 2</Text></View>
+                        <View style={styles.row}>
+                            <Text style={styles.label}>Código</Text>
+                            <Text style={styles.value}>{currentOrder.code}</Text>
+                        </View>
+
+                        <View style={styles.row}>
+                            <Text style={styles.label}>Descripción</Text>
+                            <Text style={styles.value}>{currentOrder.description}</Text>
+                        </View>
+
+                        <View style={styles.row}>
+                            <Text style={styles.label}>Cantidad</Text>
+                            <Text style={styles.value}>{currentOrder.quantity}</Text>
+                        </View>
+
+                        <View style={styles.row}>
+                            <Text style={styles.label}>Ubicación</Text>
+                            <Text style={styles.valueLocation}>{currentOrder.location}</Text>
+                        </View>
+
+                        {/* Acciones */}
+                        <View style={styles.actionsContainer}>
+                            <Text style={styles.sectionTitle}>Completar orden</Text>
+                            <TouchableOpacity
+                                style={styles.btnScan}
+                                onPress={handleOpenScanner}
+                                activeOpacity={0.8}
+                            >
+                                <Ionicons name="qr-code-outline" size={28} color="#000000" />
+                            </TouchableOpacity>
+
+                            <Text style={styles.sectionTitle}>Notificar error</Text>
+                            <TouchableOpacity
+                                style={styles.btnError}
+                                onPress={() => setShowErrorReport(true)}
+                                activeOpacity={0.8}
+                            >
+                                <Text style={styles.btnErrorIcon}>!</Text>
+                            </TouchableOpacity>
+                        </View>
                     </View>
-
-                    <Text style={styles.actionTitle}>Completar orden</Text>
-                    <TouchableOpacity style={styles.btnQr}>
-                        <Ionicons name="qr-code-outline" size={30} color="#000" />
-                    </TouchableOpacity>
-
-                    <Text style={styles.actionTitle}>Notificar error</Text>
-                    <TouchableOpacity style={styles.btnError} onPress={() => setShowErrorView(true)}>
-                        <Text style={styles.exclamation}>!</Text>
-                    </TouchableOpacity>
-                </View>
-            ) : (
-                <View style={styles.content}>
-                    <View style={styles.errorBox}>
+                ) : (
+                    /* ================= VISTA NOTIFICAR ERROR ================= */
+                    <View style={styles.reportContainer}>
                         <TextInput
-                            style={styles.errorInput}
+                            style={styles.textArea}
                             placeholder="Describa el error:"
-                            placeholderTextColor="#777"
+                            placeholderTextColor="#888888"
                             multiline
-                            value={errorText}
-                            onChangeText={setErrorText}
+                            numberOfLines={6}
+                            textAlignVertical="top"
+                            value={errorDescription}
+                            onChangeText={setErrorDescription}
                         />
-                    </View>
 
-                    <View style={styles.btnRow}>
-                        <TouchableOpacity style={styles.btnGreen} onPress={() => setShowErrorView(false)}>
-                            <Text style={styles.btnText}>Guardar</Text>
+                        <TouchableOpacity style={styles.evidencePicker} onPress={pickImage}>
+                            <Ionicons name="camera-outline" size={22} color="#555" />
+                            <Text style={styles.evidenceText}>
+                                {evidenceImage ? 'Cambiar evidencia' : 'Adjuntar foto / evidencia'}
+                            </Text>
                         </TouchableOpacity>
 
-                        <TouchableOpacity style={styles.btnRed} onPress={() => setShowErrorView(false)}>
-                            <Text style={styles.btnText}>Cancelar</Text>
-                        </TouchableOpacity>
+                        {evidenceImage && (
+                            <View style={styles.imagePreviewContainer}>
+                                <Image source={{ uri: evidenceImage }} style={styles.imagePreview} />
+                                <TouchableOpacity
+                                    onPress={() => setEvidenceImage(null)}
+                                    style={styles.removeImageBtn}
+                                >
+                                    <Ionicons name="close-circle" size={24} color="#FF3B30" />
+                                </TouchableOpacity>
+                            </View>
+                        )}
+
+                        <View style={styles.reportButtonsRow}>
+                            <TouchableOpacity
+                                style={[styles.btnAction, styles.btnGreen]}
+                                onPress={handleSaveReport}
+                            >
+                                <Text style={styles.btnActionText}>Guardar</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={[styles.btnAction, styles.btnRed]}
+                                onPress={() => {
+                                    setShowErrorReport(false);
+                                    setErrorDescription('');
+                                    setEvidenceImage(null);
+                                }}
+                            >
+                                <Text style={styles.btnActionText}>Cancelar</Text>
+                            </TouchableOpacity>
+                        </View>
                     </View>
-                </View>
-            )}
-        </View>
+                )}
+            </ScrollView>
+
+            {/* ================= MODAL ESCÁNER DE CÁMARA ================= */}
+            <Modal visible={isScanning} animationType="slide" transparent={false}>
+                <SafeAreaView style={styles.cameraContainer}>
+                    <CameraView
+                        style={StyleSheet.absoluteFillObject}
+                        facing="back"
+                        onBarcodeScanned={scanned ? undefined : handleBarcodeScanned}
+                        barcodeScannerSettings={{
+                            barcodeTypes: ['qr', 'code128', 'ean13'],
+                        }}
+                    >
+                        <View style={styles.cameraOverlay}>
+                            <View style={styles.targetBox} />
+                            <TouchableOpacity
+                                style={styles.closeCameraButton}
+                                onPress={() => setIsScanning(false)}
+                            >
+                                <Ionicons name="close" size={30} color="#FFFFFF" />
+                            </TouchableOpacity>
+                        </View>
+                    </CameraView>
+                </SafeAreaView>
+            </Modal>
+        </SafeAreaView>
     );
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#fff' },
-    header: { backgroundColor: '#00C853', paddingTop: 50, paddingBottom: 15, paddingHorizontal: 20, flexDirection: 'row', justifyContent: 'space-between' },
-    headerTitle: { fontWeight: 'bold', fontSize: 16 },
-    headerUser: { fontSize: 14, color: 'rgba(0,0,0,0.5)' },
-    content: { flex: 1, alignItems: 'center', padding: 25 },
-    orderCard: { width: '100%', marginBottom: 30 },
-    row: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
-    label: { fontWeight: 'bold', fontSize: 15 },
-    val: { fontSize: 14, color: '#333' },
-    actionTitle: { fontWeight: 'bold', fontSize: 16, marginTop: 15, marginBottom: 10 },
-    btnQr: { backgroundColor: '#00C853', paddingVertical: 8, paddingHorizontal: 30, borderRadius: 20, borderWidth: 2, borderColor: '#000' },
-    btnError: { backgroundColor: '#FF3D00', paddingVertical: 8, paddingHorizontal: 35, borderRadius: 20, borderWidth: 2, borderColor: '#000' },
-    exclamation: { color: '#fff', fontWeight: 'bold', fontSize: 20 },
-    errorBox: { width: '100%', height: 220, borderWidth: 1.5, borderColor: '#555', borderRadius: 10, padding: 12, marginTop: 30, marginBottom: 25 },
-    errorInput: { flex: 1, fontSize: 15, textAlignVertical: 'top' },
-    btnRow: { flexDirection: 'row', justifyContent: 'space-around', width: '100%' },
-    btnGreen: { backgroundColor: '#00C853', paddingVertical: 10, paddingHorizontal: 30, borderRadius: 20, borderWidth: 2, borderColor: '#000' },
-    btnRed: { backgroundColor: '#FF3D00', paddingVertical: 10, paddingHorizontal: 30, borderRadius: 20, borderWidth: 2, borderColor: '#000' },
-    btnText: { fontWeight: 'bold', fontSize: 15, color: '#000' }
+    container: {
+        flex: 1,
+        backgroundColor: '#FAFAFA',
+    },
+    scrollContent: {
+        padding: 20,
+        paddingBottom: 40,
+    },
+    card: {
+        backgroundColor: '#FFFFFF',
+        borderRadius: 12,
+        padding: 20,
+        elevation: 2,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.1,
+        shadowRadius: 3,
+    },
+    row: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        marginBottom: 16,
+        alignItems: 'center',
+    },
+    label: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        color: '#000000',
+        width: '35%',
+    },
+    valueBold: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        color: '#333333',
+        width: '65%',
+        textAlign: 'right',
+    },
+    value: {
+        fontSize: 15,
+        color: '#444444',
+        width: '65%',
+        textAlign: 'right',
+    },
+    valueLocation: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#333333',
+        width: '65%',
+        textAlign: 'right',
+    },
+    actionsContainer: {
+        marginTop: 20,
+        alignItems: 'center',
+    },
+    sectionTitle: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        marginVertical: 10,
+        color: '#000000',
+    },
+    btnScan: {
+        backgroundColor: '#00C853',
+        width: 120,
+        height: 44,
+        borderRadius: 22,
+        borderWidth: 1.5,
+        borderColor: '#000000',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 10,
+    },
+    btnError: {
+        backgroundColor: '#FF3B30',
+        width: 120,
+        height: 44,
+        borderRadius: 22,
+        borderWidth: 1.5,
+        borderColor: '#000000',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    btnErrorIcon: {
+        fontSize: 22,
+        fontWeight: 'bold',
+        color: '#FFFFFF',
+    },
+
+    /* Reporte de Error */
+    reportContainer: {
+        backgroundColor: '#FFFFFF',
+        borderRadius: 12,
+        padding: 20,
+        elevation: 2,
+    },
+    textArea: {
+        borderWidth: 1.5,
+        borderColor: '#888888',
+        borderRadius: 8,
+        padding: 14,
+        fontSize: 15,
+        backgroundColor: '#FFFFFF',
+        minHeight: 180,
+        marginBottom: 15,
+    },
+    evidencePicker: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 12,
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: '#CCCCCC',
+        borderStyle: 'dashed',
+        marginBottom: 15,
+    },
+    evidenceText: {
+        marginLeft: 8,
+        fontSize: 14,
+        color: '#555555',
+    },
+    imagePreviewContainer: {
+        position: 'relative',
+        alignSelf: 'center',
+        marginBottom: 20,
+    },
+    imagePreview: {
+        width: 120,
+        height: 120,
+        borderRadius: 8,
+    },
+    removeImageBtn: {
+        position: 'absolute',
+        top: -8,
+        right: -8,
+        backgroundColor: '#FFFFFF',
+        borderRadius: 12,
+    },
+    reportButtonsRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-around',
+        marginTop: 10,
+    },
+    btnAction: {
+        width: 120,
+        height: 44,
+        borderRadius: 22,
+        borderWidth: 1.5,
+        borderColor: '#000000',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    btnGreen: {
+        backgroundColor: '#00C853',
+    },
+    btnRed: {
+        backgroundColor: '#FF3B30',
+    },
+    btnActionText: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        color: '#000000',
+    },
+
+    /* Cámara Modal */
+    cameraContainer: {
+        flex: 1,
+        backgroundColor: '#000000',
+    },
+    cameraOverlay: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    targetBox: {
+        width: 240,
+        height: 240,
+        borderWidth: 2,
+        borderColor: '#00C853',
+        borderRadius: 12,
+        backgroundColor: 'transparent',
+    },
+    closeCameraButton: {
+        position: 'absolute',
+        top: 30,
+        right: 20,
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        padding: 10,
+        borderRadius: 25,
+    },
 });

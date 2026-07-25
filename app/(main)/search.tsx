@@ -2,13 +2,13 @@ import React, { useState } from 'react';
 import {
     FlatList,
     Keyboard,
-    SafeAreaView,
     StyleSheet,
     Text,
     TextInput,
     TouchableOpacity,
     View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 // Tipo de dato para los productos
 interface Product {
@@ -103,12 +103,7 @@ export default function SearchScreen() {
     );
 
     return (
-        <SafeAreaView style={styles.container}>
-            {/* Header Verde Superior */}
-            <View style={styles.header}>
-                <Text style={styles.headerCompany}>RZ IMPORT C.A</Text>
-                <Text style={styles.headerUser}>usuario</Text>
-            </View>
+        <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
 
             {/* Contenido Principal */}
             <View style={styles.content}>

@@ -1,125 +1,162 @@
-import { Ionicons } from '@expo/vector-icons';
-import React from 'react';
-import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import React, { useState } from 'react';
+import { FlatList, StyleSheet, Text, TextInput, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+// Datos de prueba (puedes reemplazarlos por tu backend/estado)
+const INITIAL_PRODUCTS = [
+  { id: '1', name: 'Tornillo de Acero 1/2', code: 'PRD-001', qty: 150, location: 'A-01-1' },
+  { id: '2', name: 'Empacadura Cilindro', code: 'PRD-002', qty: 45, location: 'B-03-2' },
+  { id: '3', name: 'Filtro de Aceite', code: 'PRD-003', qty: 20, location: 'A-02-4' },
+];
 
 export default function ProductSearchScreen() {
+  const [query, setQuery] = useState('');
+  const [products, setProducts] = useState(INITIAL_PRODUCTS);
+
+  // Filtrado en tiempo real por código o descripción
+  const filteredProducts = products.filter(
+    (item) =>
+      item.name.toLowerCase().includes(query.toLowerCase()) ||
+      item.code.toLowerCase().includes(query.toLowerCase())
+  );
+
   return (
-    <View style={styles.container}>
-      {/* Header */}
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+      {/* Header Superior */}
       <View style={styles.header}>
         <Text style={styles.headerText}>RZ IMPORT C.A</Text>
-        <Text style={styles.headerUser}>usuario</Text>
+        <Text style={styles.headerUser}>Usuario</Text>
       </View>
 
-      {/* Content Area */}
+      {/* Contenido Principal */}
       <View style={styles.content}>
         <Text style={styles.title}>Buscar Producto</Text>
-        
-        <TextInput
-          placeholder="ingresar codigo o descripción"
-          style={styles.input}
-        />
-        
-        <TouchableOpacity style={styles.button}>
-          <Text style={styles.buttonText}>Buscar</Text>
-        </TouchableOpacity>
-      </View>
 
-      {/* Bottom Navigation */}
-      <View style={styles.bottomNav}>
-        {/* QR Code Icon */}
-        <TouchableOpacity style={styles.navItem}>
-          <Ionicons name="qr-code" size={30} color="black" />
-        </TouchableOpacity>
-        
-        {/* Search Icon (Active) */}
-        <TouchableOpacity style={[styles.navItem, styles.activeNavItem]}>
-          <Ionicons name="search" size={30} color="black" />
-        </TouchableOpacity>
-        
-        {/* Cart Icon */}
-        <TouchableOpacity style={styles.navItem}>
-          <Ionicons name="cart-outline" size={30} color="black" />
-        </TouchableOpacity>
+        <TextInput
+          placeholder="Ingresar código o descripción"
+          placeholderTextColor="#888"
+          style={styles.input}
+          value={query}
+          onChangeText={setQuery}
+        />
+
+        {/* Lista de resultados en tabla/tarjetas */}
+        <FlatList
+          data={filteredProducts}
+          keyExtractor={(item) => item.id}
+          style={styles.list}
+          renderItem={({ item }) => (
+            <View style={styles.card}>
+              <View style={styles.cardHeader}>
+                <Text style={styles.productName}>{item.name}</Text>
+                <Text style={styles.productCode}>{item.code}</Text>
+              </View>
+              <View style={styles.cardDetails}>
+                <Text style={styles.detailText}>Cant: <Text style={styles.bold}>{item.qty}</Text></Text>
+                <Text style={styles.detailText}>Ubicación: <Text style={styles.bold}>{item.location}</Text></Text>
+              </View>
+            </View>
+          )}
+          ListEmptyComponent={
+            <Text style={styles.emptyText}>No se encontraron productos</Text>
+          }
+        />
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: 'white',
+    backgroundColor: '#fff',
   },
   header: {
     backgroundColor: '#00C853',
-    padding: 15,
+    paddingHorizontal: 20,
+    paddingVertical: 15,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
   headerText: {
-    color: 'black',
+    color: '#000',
     fontWeight: 'bold',
-    fontSize: 16,
+    fontSize: 18,
   },
   headerUser: {
-    color: 'rgba(255,255,255,0.5)',
+    color: '#000',
+    opacity: 0.7,
     fontSize: 14,
+    fontWeight: '600',
   },
   content: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
     padding: 20,
+    alignItems: 'center',
   },
   title: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: 'bold',
-    marginBottom: 20,
+    color: '#000',
+    marginBottom: 15,
   },
   input: {
-    width: '80%',
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 25,
+    width: '100%',
+    height: 48,
+    borderWidth: 1.5,
+    borderColor: '#888',
+    borderRadius: 24,
+    paddingHorizontal: 20,
+    fontSize: 15,
+    color: '#000',
+    backgroundColor: '#F9F9F9',
     marginBottom: 20,
-    paddingHorizontal: 15,
   },
-  button: {
-    backgroundColor: '#00C853',
-    paddingVertical: 12,
-    paddingHorizontal: 40,
-    borderRadius: 25,
+  list: {
+    width: '100%',
+  },
+  card: {
+    backgroundColor: '#F5F5F5',
+    padding: 15,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'black',
+    borderColor: '#DDD',
+    marginBottom: 12,
   },
-  buttonText: {
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  productName: {
     fontWeight: 'bold',
     fontSize: 16,
+    color: '#000',
+    flex: 1,
   },
-  bottomNav: {
+  productCode: {
+    fontSize: 13,
+    color: '#666',
+    fontWeight: '600',
+  },
+  cardDetails: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-    paddingVertical: 10,
-    borderTopWidth: 1,
-    borderTopColor: '#eee',
+    justifyContent: 'space-between',
   },
-  navItem: {
-    width: 50,
-    height: 50,
-    justifyContent: 'center',
-    alignItems: 'center',
+  detailText: {
+    fontSize: 14,
+    color: '#333',
   },
-  activeNavItem: {
-    backgroundColor: '#00C853',
-    borderRadius: 5,
-    padding: 10,
+  bold: {
+    fontWeight: 'bold',
+    color: '#000',
   },
-  icon: {
-    width: 30,
-    height: 30,
+  emptyText: {
+    textAlign: 'center',
+    marginTop: 30,
+    color: '#888',
+    fontSize: 15,
   },
 });

@@ -1,20 +1,26 @@
 import { useRouter } from 'expo-router';
 import { useState } from "react";
 import { StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function Index() {
-
   const [usuario, setUsuario] = useState('');
   const [contrasena, setContrasena] = useState('');
 
   const router = useRouter();
 
   const handleLogin = () => {
-    router.push('/(main)/scanner');
+    // Validación rápida opcional antes de navegar
+    if (!usuario.trim() || !contrasena.trim()) {
+      // Por ahora puedes dejarlo pasar o validar aquí
+    }
+
+    // Usamos replace para que no se pueda volver al Login con el botón "Atrás"
+    router.replace('/(main)/scanner');
   };
 
   return (
-    <View style={styles.screenContainer}>
+    <SafeAreaView style={styles.screenContainer}>
       {/* Tarjeta contenedora de Login */}
       <View style={styles.card}>
         <Text style={styles.title}>Iniciar Sesión</Text>
@@ -46,11 +52,15 @@ export default function Index() {
         </View>
 
         {/* Botón Entrar */}
-        <TouchableOpacity style={styles.button} onPress={handleLogin}>
+        <TouchableOpacity
+          style={styles.button}
+          onPress={handleLogin}
+          activeOpacity={0.8}
+        >
           <Text style={styles.buttonText}>Entrar</Text>
         </TouchableOpacity>
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 
